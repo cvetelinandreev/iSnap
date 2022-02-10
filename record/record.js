@@ -870,6 +870,10 @@ class Recorder {
         Recorder.blockMap.clear();
     }
 
+    static setLanguage(lang, callback) {
+        ide.setLanguage(lang, callback, true);
+    }
+
     static setRecordScale(scale) {
         ide.setBlocksScale(scale);
         Recorder.recordScale = scale;
@@ -1062,6 +1066,9 @@ class Recorder {
         }
         this.addRecord(new Record('setBlockScale', {
             'scale': SyntaxElementMorph.prototype.scale,
+        }));
+        this.addRecord(new Record('setLanguage', {
+            'lang': SnapTranslator.language,
         }));
     }
 
