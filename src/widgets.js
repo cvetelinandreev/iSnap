@@ -1990,18 +1990,18 @@ DialogBoxMorph.prototype.promptCredentials = function (
         null, // text
         false, // numeric?
         {
-            'January' : ['January'],
-            'February' : ['February'],
-            'March' : ['March'],
-            'April' : ['April'],
-            'May' : ['May'],
-            'June' : ['June'],
-            'July' : ['July'],
-            'August' : ['August'],
-            'September' : ['September'],
-            'October' : ['October'],
-            'November' : ['November'],
-            'December' : ['December']
+            'January' : [localize('January')],
+            'February' : [localize('February')],
+            'March' : [localize('March')],
+            'April' : [localize('April')],
+            'May' : [localize('May')],
+            'June' : [localize('June')],
+            'July' : [localize('July')],
+            'August' : [localize('August')],
+            'September' : [localize('September')],
+            'October' : [localize('October')],
+            'November' : [localize('November')],
+            'December' : [localize('December')]
         },
         true // read-only
     );
