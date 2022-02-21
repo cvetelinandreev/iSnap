@@ -767,6 +767,7 @@ IDE_Morph.prototype.createControlBar = function () {
         settingsButton,
         stageSizeButton,
         appModeButton,
+        shareButton,
         steppingButton,
         cloudButton,
         x,
@@ -855,6 +856,30 @@ IDE_Morph.prototype.createControlBar = function () {
     appModeButton = button;
     this.controlBar.add(appModeButton);
     this.controlBar.appModeButton = appModeButton; // for refreshing
+
+    // shareButton
+    button = new PushButtonMorph(
+        this,
+        'pressShare',
+        'Share'
+    );
+    
+    button.fontSize = 13;
+    button.corner = 12;
+    button.color = new Color(255, 140, 26);
+    button.highlightColor = button.color.darker(25);
+    button.pressColor = button.color.darker(50);
+    button.labelMinExtent = new Point(36, 18);
+    button.padding = 3;
+    button.labelShadowOffset = new Point(-1, -1);
+    button.labelShadowColor = colors[1];
+    button.labelColor = this.buttonLabelColor;
+    button.contrast = this.buttonContrast;
+    button.hint = localize('Save and share project in the cloud');
+    button.fixLayout();
+    shareButton = button;
+    this.controlBar.add(shareButton);
+    this.controlBar.shareButton = shareButton; // for menu positioning
 
     //steppingButton
     button = new ToggleButtonMorph(
@@ -1107,6 +1132,9 @@ IDE_Morph.prototype.createControlBar = function () {
         steppingButton.setCenter(myself.controlBar.center());
         steppingButton.setRight(slider.left() - padding);
 
+        shareButton.setCenter(myself.controlBar.center());
+        shareButton.setRight(steppingButton.left() - padding);
+
         settingsButton.setCenter(myself.controlBar.center());
         settingsButton.setLeft(this.left());
 
@@ -1187,7 +1215,7 @@ IDE_Morph.prototype.createControlBar = function () {
         this.label.add(txt);
         this.label.setExtent(
             new Point(
-                steppingButton.left() - settingsButton.right() - padding * 2,
+                shareButton.left() - settingsButton.right() - padding * 2,
                 txt.height()
             )
         );
@@ -1196,6 +1224,133 @@ IDE_Morph.prototype.createControlBar = function () {
         this.add(this.label);
     };
 };
+
+IDE_Morph.prototype.getProjectURL = function () {
+    let projectId = 'user=' +
+        encodeURIComponent(this.cloud.username.toLowerCase()) +
+        '&project=' +
+        encodeURIComponent(this.projectName);
+    let link = `https://snap.berkeley.edu/project?${projectId}`;
+    return link;
+}
+
+IDE_Morph.prototype.openProjectURL = function () {
+    let link = this.getProjectURL()
+    window.open(link, '_blank');
+}
+
+IDE_Morph.prototype.copyProjectURLToClipboard = function () {
+    let link = decodeURI(this.getProjectURL());
+    navigator.clipboard.writeText(link);
+}
+
+IDE_Morph.prototype.showProjectSharedDialog = function () {
+    let link = decodeURI(this.getProjectURL());
+    let linkButton = new PushButtonMorph(
+        this,
+        'openProjectURL',
+        link
+    );
+
+    let copyButton = new PushButtonMorph(
+        this,
+        'copyProjectURLToClipboard',
+        localize('COPY')
+    );
+
+    let body = new AlignmentMorph('row');
+    body.add(linkButton);
+    body.add(copyButton);
+    body.fixLayout();
+
+    let dlg = new DialogBoxMorph();
+    dlg.labelString = localize("Project shared");
+    dlg.key = 'project_shared';
+    dlg.createLabel();
+    dlg.addBody(body);
+    dlg.addButton('ok', localize('Close'));
+    dlg.addButton(() => {
+        window.open(`mailto:cvetelin.andreev@gmail.com?subject=${localize('Project for Review')}&body=${localize('Hello. Please review my project here')}: ${encodeURIComponent(link)}`);
+    }, localize('Share for Review'));
+    dlg.fixLayout();
+    dlg.popUp(this.world());
+}
+
+IDE_Morph.prototype.showUsernameMissingDialog = function () {
+    let dlg = new DialogBoxMorph();
+
+    dlg.labelString = localize("Username missing");
+    dlg.key = 'share_not_logged_in';
+    dlg.createLabel();
+    dlg.setPicture(this.cloudIcon(null, new Color(180, 0, 0)))
+
+    var txt = new TextMorph(
+        localize('I can\'t see your username to share your project with.\nPlease Login or Sign up.'),
+        dlg.fontSize,
+        dlg.fontStyle,
+        true,
+        false,
+        'center',
+        null,
+        null,
+        MorphicPreferences.isFlat ? null : new Point(1, 1),
+        WHITE
+    );
+    dlg.addBody(txt);
+
+    dlg.addButton(() => {
+        dlg.cancel();
+        this.initializeCloud()
+    }, localize('Login...'));
+    dlg.addButton(() => {
+        dlg.cancel();
+        this.createCloudAccount()
+    }, localize('Signup...'));
+    dlg.addButton('ok', localize('Close'));
+
+    dlg.fixLayout();
+    dlg.popUp(this.world());
+}
+
+IDE_Morph.prototype.saveAndShareProject = function (projectName) {
+    this.saveProjectToCloud(projectName, () => 
+        this.cloud.shareProject(
+            projectName,
+            null, // username is implicit
+            () => {
+               this.showProjectSharedDialog();
+            },
+            this.cloudError()
+        )
+    );
+}
+
+IDE_Morph.prototype.pressShare = function () {
+    let projectName = this.projectName ? this.projectName : localize('untitled');
+
+    if (!this.cloud.username) {
+        this.showUsernameMissingDialog();
+        return;
+    }
+
+    this.cloud.getProjectList(
+        response => {
+            let projectList = response.projects;
+            if (detect(projectList, item => item.projectname === projectName)) {
+                this.confirm(
+                    `${localize('A project with the name')} '${projectName}' ${localize('already exists')}. ${localize('Are you sure you want to replace it?')}`,
+                    localize('Replace Project'),
+                    () => this.saveAndShareProject(projectName)
+                );
+            } else {
+                this.saveAndShareProject(projectName);
+            }
+        },
+        (err, lbl) => {
+            this.cloudError().call(null, err, lbl);
+        }
+    );
+}
 
 IDE_Morph.prototype.changeCategory = function (category) {
     Trace.log('IDE.changeCategory', category);
@@ -5403,6 +5558,7 @@ IDE_Morph.prototype.toggleAppMode = function (appMode) {
             this.controlBar.cloudButton,
             this.controlBar.projectButton,
             this.controlBar.settingsButton,
+            this.controlBar.shareButton,
             this.controlBar.steppingButton,
             this.controlBar.stageSizeButton,
             this.paletteHandle,
@@ -5688,6 +5844,7 @@ IDE_Morph.prototype.reflectLanguage = function (lang, callback, noSave) {
     this.spriteBar.tabBar.tabTo('scripts');
     this.createCategories();
     this.createCorralBar();
+    this.createControlBar();
     this.fixLayout();
     if (this.loadNewProject) {
         this.newProject();
@@ -6182,7 +6339,7 @@ IDE_Morph.prototype.verifyProject = function (body) {
     return encodedBody.length;
 };
 
-IDE_Morph.prototype.saveProjectToCloud = function (name) {
+IDE_Morph.prototype.saveProjectToCloud = function (name, onSuccess) {
     Trace.log('IDE.saveProjectToCloud', name);
     var projectBody, projectSize;
 
@@ -6200,7 +6357,12 @@ IDE_Morph.prototype.saveProjectToCloud = function (name) {
     this.cloud.saveProject(
         this.projectName,
         projectBody,
-        () => this.showMessage('saved.', 2),
+        () => { 
+            this.showMessage('saved.', 2);
+            if (onSuccess) {
+                onSuccess.call();
+            }
+        },
         this.cloudError()
     );
 };
