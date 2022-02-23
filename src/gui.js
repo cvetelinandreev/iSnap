@@ -1312,6 +1312,33 @@ IDE_Morph.prototype.showUsernameMissingDialog = function () {
     dlg.popUp(this.world());
 }
 
+IDE_Morph.prototype.showInputProjectNameDialog = function () {
+    new DialogBoxMorph(
+        this,
+        projectName => this.cloud.getProjectList(
+            response => {
+                let projectList = response.projects;
+                if (detect(projectList, item => item.projectname === projectName)) {
+                    this.confirm(
+                        `${localize('A project with the name')} '${projectName}' ${localize('already exists')}. ${localize('Are you sure you want to replace it?')}`,
+                        localize('Replace Project'),
+                        () => this.saveAndShareProject(projectName)
+                    );
+                }
+            },
+            (err, lbl) => {
+                this.cloudError().call(null, err, lbl);
+            }
+        ),
+        this
+    ).prompt(
+        "Enter project name",
+        this.projectName,
+        this.world(),
+        null // pic
+    );
+}
+
 IDE_Morph.prototype.saveAndShareProject = function (projectName) {
     this.saveProjectToCloud(projectName, () => 
         this.cloud.shareProject(
@@ -1326,30 +1353,11 @@ IDE_Morph.prototype.saveAndShareProject = function (projectName) {
 }
 
 IDE_Morph.prototype.pressShare = function () {
-    let projectName = this.projectName ? this.projectName : localize('untitled');
-
     if (!this.cloud.username) {
         this.showUsernameMissingDialog();
-        return;
+    } else {
+        this.showInputProjectNameDialog();
     }
-
-    this.cloud.getProjectList(
-        response => {
-            let projectList = response.projects;
-            if (detect(projectList, item => item.projectname === projectName)) {
-                this.confirm(
-                    `${localize('A project with the name')} '${projectName}' ${localize('already exists')}. ${localize('Are you sure you want to replace it?')}`,
-                    localize('Replace Project'),
-                    () => this.saveAndShareProject(projectName)
-                );
-            } else {
-                this.saveAndShareProject(projectName);
-            }
-        },
-        (err, lbl) => {
-            this.cloudError().call(null, err, lbl);
-        }
-    );
 }
 
 IDE_Morph.prototype.changeCategory = function (category) {

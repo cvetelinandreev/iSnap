@@ -1207,5 +1207,8 @@ SnapTranslator.dict.bg = {
     'stay signed in on this computer\nuntil logging out':
         'остани вписан на този компютър',
 
-
+    'Enter project name':
+        'Въведете име на проекта',
+    'Task from':
+        'Задача от',
 };
