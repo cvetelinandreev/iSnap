@@ -1209,6 +1209,4 @@ SnapTranslator.dict.bg = {
 
     'Enter project name':
         'Въведете име на проекта',
-    'Task from':
-        'Задача от',
 };

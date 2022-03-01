@@ -1324,6 +1324,8 @@ IDE_Morph.prototype.showInputProjectNameDialog = function () {
                         localize('Replace Project'),
                         () => this.saveAndShareProject(projectName)
                     );
+                } else {
+                    this.saveAndShareProject(projectName)
                 }
             },
             (err, lbl) => {
