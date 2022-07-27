@@ -304,11 +304,11 @@ SnapTranslator.dict.bg = {
     'change x by %n':
         'промени х с %n',
     'set x to %n':
-        'настрой х на %n',
+        'направи х на %n',
     'change y by %n':
         'промени y с %n',
     'set y to %n':
-        'настрой y на %n',
+        'направи y на %n',
     'if on edge, bounce':
         'ако е в края, отблъсни се',
     'x position':
@@ -340,13 +340,13 @@ SnapTranslator.dict.bg = {
     'change %eff effect by %n':
         'смени %eff ефект с %n',
     'set %eff effect to %n':
-        'настрой ефект %eff на %n',
+        'направи ефект %eff на %n',
     'clear graphic effects':
         'махни ефектите',
     'change size by %n':
         'промени размера с %n',
     'set size to %n %':
-        'настрой размера на %n',
+        'направи размера на %n',
     'size':
         'размер',
     'show':
@@ -379,7 +379,7 @@ SnapTranslator.dict.bg = {
     'change tempo by %n':
         'промени темпото с %n',
     'set tempo to %n bpm':
-        'настрой темпо %n удара в мин.',
+        'направи темпо %n удара в мин.',
     'tempo':
         'темпо',
 
@@ -391,15 +391,15 @@ SnapTranslator.dict.bg = {
     'pen up':
         'вдигни молива',
     'set pen color to %clr':
-        'избери молив с цвят %clr',
+        'цвят %clr',
     'change pen color by %n':
-        'промени цвята на молива с %n',
+        'промени цвята с %n',
     'set pen color to %n':
         'избери цвят %n',
     'change pen shade by %n':
         'промени яркостта с %n',
     'set pen shade to %n':
-        'настрой яркостта на %n',
+        'направи яркостта на %n',
     'change pen size by %n':
         'промени размера с %n',
     'set pen size to %n':
@@ -544,7 +544,7 @@ SnapTranslator.dict.bg = {
         'Изтрий променлива',
 
     'set %var to %s':
-        'настрой %var на стойност %s',
+        'направи %var на %s',
     'change %var by %n':
         'промени %var с %n',
     'show variable %var':

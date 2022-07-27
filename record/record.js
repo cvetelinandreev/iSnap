@@ -1045,10 +1045,10 @@ class Recorder {
     stop() {
         const json = JSON.stringify(this.records, null, 4);
         window.localStorage.setItem('playback', json);
-        saveData(new Blob([json]), this.recordingName + '-logs.json');
-        saveData(new Blob([this.startXML]), this.recordingName + '-start.xml');
+        saveData(new Blob([json]), 'logs.json');
+        saveData(new Blob([this.startXML]), 'start.xml');
         if (this.audioRecorder) {
-            this.audioRecorder.stop(this.recordingName + '-audio');
+            this.audioRecorder.stop('audio');
         }
         this.isRecording = false;
     }
