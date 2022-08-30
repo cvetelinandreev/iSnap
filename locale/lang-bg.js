@@ -164,15 +164,15 @@
 
 SnapTranslator.dict.bg = {
 
-/*
-    Special characters: (see <http://0xcc.net/jsescape/>)
-
-    ,    \u00c4, \u00e4
-
-,    \u00d6, \u00f6
-    ,    \u00dc, \u00fc
-    §      \u00df
-*/
+    /*
+        Special characters: (see <http://0xcc.net/jsescape/>)
+    
+        ,    \u00c4, \u00e4
+    
+    ,    \u00d6, \u00f6
+        ,    \u00dc, \u00fc
+        §      \u00df
+    */
 
     // translations meta information
     'language_name':
@@ -219,7 +219,7 @@ SnapTranslator.dict.bg = {
 
     // tabs:
     'Scripts':
-        'Скриптове',
+        'Код',
     'Costumes':
         'Костюми',
     'Sounds':
@@ -288,9 +288,9 @@ SnapTranslator.dict.bg = {
     'move %n steps':
         'напред с %n стъпки',
     'turn %clockwise %n degrees':
-        ' %clockwise с %n градуса',
+        'надясно на %n градуса',
     'turn %counterclockwise %n degrees':
-        'завърти %counterclockwise с %n градуса',
+        'наляво на %n градуса',
     'point in direction %dir':
         'обърни се в посока %dir',
     'point towards %dst':
@@ -304,11 +304,11 @@ SnapTranslator.dict.bg = {
     'change x by %n':
         'промени х с %n',
     'set x to %n':
-        'настрой х на %n',
+        'направи х на %n',
     'change y by %n':
         'промени y с %n',
     'set y to %n':
-        'настрой y на %n',
+        'направи y на %n',
     'if on edge, bounce':
         'ако е в края, отблъсни се',
     'x position':
@@ -340,13 +340,13 @@ SnapTranslator.dict.bg = {
     'change %eff effect by %n':
         'смени %eff ефект с %n',
     'set %eff effect to %n':
-        'настрой ефект %eff на %n',
+        'направи ефект %eff на %n',
     'clear graphic effects':
         'махни ефектите',
     'change size by %n':
         'промени размера с %n',
     'set size to %n %':
-        'настрой размера на %n',
+        'направи размера на %n',
     'size':
         'размер',
     'show':
@@ -379,7 +379,7 @@ SnapTranslator.dict.bg = {
     'change tempo by %n':
         'промени темпото с %n',
     'set tempo to %n bpm':
-        'настрой темпо %n удара в мин.',
+        'направи темпо %n удара в мин.',
     'tempo':
         'темпо',
 
@@ -387,19 +387,19 @@ SnapTranslator.dict.bg = {
     'clear':
         'изчисти всичко',
     'pen down':
-        'натисни молива',
+        'спусни молива',
     'pen up':
         'вдигни молива',
     'set pen color to %clr':
-        'избери молив с цвят %clr',
+        'цвят %clr',
     'change pen color by %n':
-        'промени цвята на молива с %n',
+        'промени цвята с %n',
     'set pen color to %n':
         'избери цвят %n',
     'change pen shade by %n':
         'промени яркостта с %n',
     'set pen shade to %n':
-        'настрой яркостта на %n',
+        'направи яркостта на %n',
     'change pen size by %n':
         'промени размера с %n',
     'set pen size to %n':
@@ -544,7 +544,7 @@ SnapTranslator.dict.bg = {
         'Изтрий променлива',
 
     'set %var to %s':
-        'настрой %var на стойност %s',
+        'направи %var на %s',
     'change %var by %n':
         'промени %var с %n',
     'show variable %var':
@@ -749,7 +749,7 @@ SnapTranslator.dict.bg = {
     'clean up':
         'разчисти',
     'arrange scripts\nvertically':
-        'вертикално подреждане на скриптовере',
+        'подреди кода',
     'add comment':
         'добави коментар',
     'make a block...':
@@ -778,9 +778,9 @@ SnapTranslator.dict.bg = {
     // dialogs
     // buttons
     'OK':
-        'OK',
+        'Добре',
     'Ok':
-        'Ok',
+        'Добре',
     'Cancel':
         'Отмени',
     'Yes':
@@ -1121,5 +1121,92 @@ SnapTranslator.dict.bg = {
     'now connected':
         'конектиран',
     'undo':
-        'въстанови'
+        'въстанови',
+
+    // Sharing
+    'Share':
+        'Сподели',
+    'Save and share project in the cloud':
+        'Запази и сподели проекта в Интернет',
+    'Close':
+        'Затвори',
+    'Project shared':
+        'Проектът е споделен',
+    'COPY':
+        'Копирай',
+    'A project with the name':
+        'Проект с името',
+    'already exists':
+        'вече съществува',
+    'Are you sure you want to replace it?':
+        'Сирурен ли си че искаш да запишеш върху него?',
+    'Replace Project':
+        'Подмени проект',
+    'Share for Review':
+        'Изпрати за обратна връзка',
+
+    'Username missing':
+        'Липсва потребителско име',
+    'I can\'t see your username to share your project with.\nPlease Login or Sign up.':
+        'Не намирам потребителско име, с което да споделя проекта.\nМоля, впишете се или се регистрирайте.',
+
+    // Login/Sign up
+
+    'Login...':
+        'Вписване',
+    'Sign in':
+       'Вписване',
+    'Signup...':
+        'Регистрация',
+    'Sign up':
+        'Регистрация',
+    'User name:':
+        'Потребителско име:',
+    'Birth date:':
+        'Месец на раждане:',
+    'year:':
+        'година на раждане:',
+
+    'January':
+        'Януари',
+        'February':
+        'Февруари',
+        'March':
+        'Март',
+        'April':
+        'Април',
+        'May':
+        'Май',
+        'June':
+        'Юни',
+        'July':
+        'Юли',
+        'August':
+        'Август',
+        'September':
+        'Септември',
+        'October':
+        'Октомври',
+        'November':
+        'Ноември',
+        'December':
+        'Декември',
+
+    'E-mail address:':
+        'Електронна поща:',
+    'Password:':
+        'Парола:',
+    'Repeat Password:':
+        'Повтори парола:',
+    'Terms of Service...':
+        'Условия на Услугата',
+    'Privacy...':
+        'Поверителност',
+    'I have read and agree\nto the Terms of Service':
+        'прочетох и съм съгласен с\nУсловията на Услугата',
+    'stay signed in on this computer\nuntil logging out':
+        'остани вписан на този компютър',
+
+    'Enter project name':
+        'Въведете име на проекта',
 };
