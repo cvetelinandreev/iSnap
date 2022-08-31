@@ -1319,7 +1319,11 @@ class Recorder {
     }
 
     static setLanguage(lang, callback) {
-        ide.setLanguage(lang, callback, true);
+        if (SnapTranslator.language != lang) {
+            ide.setLanguage(lang, callback, true);
+        } else {
+            callback();
+        }
     }
 
     static setRecordScale(scale) {
