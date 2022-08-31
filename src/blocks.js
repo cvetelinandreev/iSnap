@@ -2621,6 +2621,10 @@ BlockMorph.prototype.blockId = function() {
         'id': this.id,
         'template': this.isTemplate,
         'spec': this.blockSpec,
+        // For custom block instances. We put this here since they don't have
+        // a common superclass other than BlockMorph.
+        'definitionGUID': this.definition ? this.definition.guid : undefined,
+        'isPrototype': this.isPrototype || false,
     };
 };
 
@@ -6064,6 +6068,10 @@ ReporterBlockMorph.prototype.snapToInput = function(target) {
         // Record the index of the input in its parent, since when
         // we redo this action, the InputSlotMorph itself will have
         // been replaced with a copy.
+        // Would it be better to use .inputs() instead of children? This would
+        // align better with how we record/serialize ArgMorphs.
+        // Might require recording to a new field, though and keeping old logic.
+        // Would also have to update login in ArgMorph deserialization
         target.indexInParent = -1;
         if (target.parent != null && target.children) {
             target.indexInParent = target.parent.children.indexOf(target);
@@ -7633,7 +7641,7 @@ ScriptsMorph.prototype.recoverLastDrop = function (forRedrop, rec) {
         if (rec.lastDropTarget) {
             if (forRedrop) {
                 // twprice: I don't understand why this is here. When the
-                // reporter is dropped, it will replace the input and doing 
+                // reporter is dropped, it will replace the input and doing
                 // it now just creates errors and messes up the animation.
                 // rec.lastDropTarget.replaceInput(
                 //     rec.lastReplacedInput,
@@ -7989,7 +7997,15 @@ ArgMorph.prototype.argId = function() {
     var index = this.parent.inputs().indexOf(this);
     var id = block.blockId();
     id.argIndex = index;
-    id.argType = typeof(this);
+
+    let multiArg = this.parent;
+    if (multiArg instanceof MultiArgMorph) {
+        let parent = multiArg.parent;
+        if (parent && parent.inputs) {
+            id.multiArgIndex =
+                parent.inputs().indexOf(multiArg);
+        }
+    }
     return id;
 };
 

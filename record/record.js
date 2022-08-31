@@ -188,6 +188,96 @@ extend(IDE_Morph, 'addNewSprite', function(base) {
     window.recorder.addRecord(new Record('IDE_addSprite', data));
 });
 
+extend(SpeechBubbleMorph, 'popUp', function(base, world, pos, isClickable) {
+    if (!isClickable && SpeechBubbleMorph.silent) return;
+    base.call(this, world, pos, isClickable);
+    if (!isClickable) {
+        window.setTimeout(() => {
+            this.destroy();
+        }, 3000);
+    }
+});
+
+BlockMorph.prototype.scrollBlockIntoView = function (lag, padding) {
+    var leftOff, rightOff, topOff, bottomOff,
+        sf = this.parentThatIsA(ScrollFrameMorph);
+    let lerp = 1 - (lag || 0);
+    padding = padding || 0;
+    if (!sf) {return 0; }
+
+    let remaining = 0;
+
+    // We use bounds rather than full bounds, since we really only want this
+    // block, not it and all its children
+    let bounds = this.bounds;
+
+    // Only scroll X if we can actually show the whole block in the SFM
+    // E.g. in the palette a block is often wider than the ScrollFrameMorph
+    if (bounds.width() + padding * 2 <= sf.width()) {
+        rightOff = Math.min(
+            bounds.right() + padding - sf.right(),
+            sf.contents.right() - sf.right()
+        );
+        if (rightOff > 0) {
+            sf.contents.moveBy(new Point(-rightOff * lerp, 0));
+            remaining = Math.max(Math.abs(rightOff), remaining);
+        }
+
+        // Never try to scroll beyond the left side of the contents
+        let left = Math.max(
+            sf.contents.left(),
+            bounds.left() - padding
+        );
+        leftOff = left - sf.left();
+        if (leftOff < 0) {
+            sf.contents.moveBy(new Point(-leftOff * lerp, 0));
+            remaining = Math.max(Math.abs(leftOff), remaining);
+        }
+    }
+
+    // Same for Y (though this seems very likely to always be true)
+    if (bounds.height() + padding * 2 <= sf.height()) {
+        // Never try to scroll beyond the top of the contents
+        let top =  Math.max(
+            sf.contents.top(),
+            bounds.top() - padding
+        );
+        topOff = top - sf.top();
+        if (topOff < 0) {
+            sf.contents.moveBy(new Point(0, -topOff * lerp));
+            remaining = Math.max(Math.abs(topOff), remaining);
+        }
+
+        bottomOff = Math.min(
+            bounds.bottom() + padding - sf.bottom(),
+            sf.contents.bottom() - sf.bottom()
+        );
+        if (bottomOff > 0) {
+            sf.contents.moveBy(new Point(0, -bottomOff * lerp));
+            remaining = Math.max(Math.abs(bottomOff), remaining);
+        }
+    }
+
+    sf.adjustScrollBars();
+    return remaining
+};
+
+BlockMorph.prototype.scrollBlockIntoViewAnimate = function (lag, padding) {
+    let sf = this.parentThatIsA(ScrollFrameMorph);
+    if (!sf || sf.isAnimatingScroll) return;
+    sf.isAnimatingScroll = true;
+    let maxFrames = 100;
+    let timeout = setInterval(() => {
+        let remaining = this.scrollBlockIntoView(lag, padding);
+        maxFrames--;
+        if (remaining < 1 || maxFrames <= 0) {
+            this.scrollBlockIntoView(0, padding);
+            clearInterval(timeout);
+            sf.isAnimatingScroll = false;
+        }
+    }, 1);
+}
+
 class Record {
 
     static fromInputSlotEdit(data) {
@@ -200,72 +290,158 @@ class Record {
 
     constructor(type, data) {
         this.type = type;
+        if (data && !data._recordID) data._recordID = newGuid();
         this.data = Recorder.serialize(data);
     }
 
     replay(callback, fast) {
+        // No speech bubbles if fast-forwarding
+        SpeechBubbleMorph.silent = fast;
+        // Also run scripts quickly
+        if (fast) {
+            window.ide.startFastTracking();
+        } else {
+            window.ide.stopFastTracking();
+        }
         let method = 'replay_' + this.type;
         if (!this[method]) {
             console.warn('Unknown record type: ' + this.type);
             return;
         }
         console.log('Playing:', this.type, this.data);
-        let data = Recorder.deserialize(this.data);
+        let data = Recorder.deserialize(this.data, true);
         this[method].call(this, data, callback, fast);
+
+        if (!fast) {
+            let point = this.getCursor(data);
+            if (point) Recorder.clickIfRegistered(point);
+        }
+        Recorder.clickRegistered = false;
     }
 
-    replacePHBM(dropRecord, parent, key) {
-        // Hack to recover the PHBM, which has no spec and is created
-        // automatically console.log('attempting to replace: ', key);
-        if (!parent) return;
-        if (parent[key] === undefined) {
-            // console.log('Undefined key');
-            if (dropRecord.situation && dropRecord.situation.origin) {
-                // console.log('Custom origin');
-                let origin = dropRecord.situation.origin;
-                let editor = null;
-                if (origin instanceof ScriptsMorph) {
-                    editor = origin.parentThatIsA(BlockEditorMorph);
-                } else if (origin.guid) {
-                    editor = Recorder.findShowingBlockEditor(origin.guid);
-                } else {
-                    console.warn('Unknown origin for BEM: ', origin);
-                }
-                if (editor) {
-                    // console.log('Editor');
-                    let blocks = editor.body.children[0].children;
-                    blocks = blocks.filter(b =>
-                        b instanceof PrototypeHatBlockMorph);
-                    let hat = blocks[0];
-                    if (hat) {
-                        // console.log("Replaced hat block!", key);
-                        parent[key] = hat;
-                    }
+    getCursor(data, scroll) {
+        return this.getCursorOrPreCursor('cursor', data, scroll);
+    }
+
+    getPreCursor(data, scroll) {
+        return this.getCursorOrPreCursor('precursor', data, scroll);
+    }
+
+    getCursorOrPreCursor(type, data, scroll) {
+        data = data || Recorder.deserialize(this.data, false);
+        let cursorMethod = this[type + '_' + this.type];
+        if (!cursorMethod) return null;
+        try {
+            return cursorMethod.call(this, data, scroll);
+        } catch (e) {
+            // Probably this is ok, but may want to log somehow...
+            console.warn('Error during cursor calculation:');
+            console.warn(e);
+        }
+        return null;
+    }
+
+    getSituationPosition(situation) {
+        if (!situation || !situation.position) return null;
+        let cursor = situation.position;
+        let origin = situation.origin;
+        // console.log('origin', origin);
+        if (cursor && origin && origin.bounds) {
+            cursor = cursor.add(origin.bounds.origin);
+        }
+        cursor = cursor.add(new Point(5, 5));
+        return cursor;
+    }
+
+    precursor_blockDrop(data, scroll) {
+        let pos = this.getSituationPosition(data.lastOrigin);
+        let origin = data.lastOrigin ? data.lastOrigin.origin : null;
+        // TODO: could in theory do this if *any* ancestor is a SFM...
+        if (scroll && origin && origin.parent instanceof ScrollFrameMorph) {
+            if (data.lastDroppedBlock) {
+                // TODO: Need better differentiation between templates and non
+                let template = Recorder.getTemplateBlock(
+                    data.lastDroppedBlock.selector);
+                // console.log("SCROLLING", data.lastDroppedBlock, template);
+                if (template) {
+                    template.scrollBlockIntoViewAnimate(0.95, 10);
                 }
             }
         }
+        if (scroll && data.lastDropTarget && data.lastDropTarget.element) {
+            let target = Recorder.getBlock(data.lastDropTarget.element);
+            if (target) target.scrollBlockIntoViewAnimate(0.95, 10);
+        }
+        return pos;
     }
 
-    replay_blockDrop(dropRecord, callback, fast) {
+    cursor_blockDrop(data) {
+        return this.getSituationPosition(data.situation);
+    }
+
+    replay_blockDrop(data, callback, fast) {
         let sprite = window.ide.currentSprite;
         let scripts = sprite.scripts;
-        this.replacePHBM(dropRecord, dropRecord, 'lastDroppedBlock');
-        this.replacePHBM(dropRecord, dropRecord.lastDropTarget, 'element');
-        // console.log('Dropping deserialized', dropRecord);
-        scripts.playDropRecord(dropRecord, callback, fast ? 1 : null);
+        // console.log('Dropping deserialized', data);
+        const finish = () => {
+            // Don't allow any scrolling error to stop callback
+            try {
+                if (!fast && data.lastDroppedBlock) {
+                    data.lastDroppedBlock.scrollBlockIntoViewAnimate(0.95, 10);
+                }
+            } catch {}
+            if (callback) callback();
+        }
+        scripts.playDropRecord(data, finish,
+            fast ? 1 : Recorder.BLOCK_DRAG_DURATION_MS);
+    }
+
+    cursor_block_grabbed(data) {
+        // no-op... seems to be buggy and does not improve animation
+
+        // let def = data.id;
+        // let block = Recorder.getBlock(def);
+        // if (!block) return;
+        // let grabPoint = block.bounds.origin.add(new Point(5, 5));
+        // console.log([...Recorder.blockMap.entries()]);
+        // console.log('grabbed', block, grabPoint);
+        // return grabPoint;
+        // return block.center();
+    }
+
+    replay_block_grabbed(data, callback, fast) {
+        // no-op
+        setTimeout(callback, 1);
+    }
+
+    cursor_inputSlotEdit(data) {
+        // TODO: This can sometime give faulty readings when
+        // editing templates and possibly other blocks...
+        let input = Recorder.deserializeArgId(data.id, false);
+        if (!input || !input.center) return;
+        return input.center();
     }
 
     replay_inputSlotEdit(data, callback, fast) {
-        let block = Recorder.getOrCreateBlock(data.id);
-        let input = block.inputs()[data.id.argIndex];
+        let input = Recorder.deserializeArgId(data.id, true);
         if (input instanceof ColorSlotMorph) {
             input.setColor(data.value);
         } else if (input instanceof InputSlotMorph ||
                 input instanceof BooleanSlotMorph) {
             input.setContents(data.value);
         }
-        Recorder.registerClick(input.center(), fast);
+        Recorder.registerClick();
         setTimeout(callback, 1);
+    }
+
+    cursor_run(data) {
+        if (data && data.id) {
+            let block = Recorder.getBlock(data);
+            if (!block) return null;
+            return block.center().add(block.position()).divideBy(2);
+        } else {
+            return ide.controlBar.startButton.center();
+        }
     }
 
     replay_run(data, callback, fast) {
@@ -301,16 +477,14 @@ class Record {
             prepareToRun();
             // console.log('Toggle', fast, procFinished, block);
             threads.toggleProcess(block, receiver);
-            let click = block.center().add(block.position()).divideBy(2);
-            Recorder.registerClick(click, fast);
+            Recorder.registerClick();
             stopCondition = () => {
                 // Stop when the thread has stopped running
                 return !receiver || isFinished();
             };
         } else {
             // Green flag
-            let click = ide.controlBar.startButton.center();
-            Recorder.registerClick(click, fast);
+            Recorder.registerClick();
             prepareToRun();
             ide.runScripts();
             stopCondition = () => {
@@ -343,23 +517,34 @@ class Record {
         }, 1);
     }
 
+    cursor_stop(data) {
+        return ide.controlBar.stopButton.center();
+    }
+
     replay_stop(data, callback, fast) {
-        let click = ide.controlBar.stopButton.center();
-        Recorder.registerClick(click, fast);
+        Recorder.registerClick();
         window.ide.stopAllScripts();
         setTimeout(callback, 1);
     }
 
-    replay_changeCategory(data, callback, fast) {
+    cursor_changeCategory(data) {
         let categoryIndex = SpriteMorph.prototype.categories
             .indexOf(data.value.toLocaleLowerCase());
         if (categoryIndex >= 0) {
-            let click = ide.categories.children[categoryIndex].center();
-            Recorder.registerClick(click, fast);
+            return ide.categories.children[categoryIndex].center();
         }
+    }
 
+    replay_changeCategory(data, callback, fast) {
+        Recorder.registerClick();
         window.ide.changeCategory(data.value);
         setTimeout(callback, 1);
+    }
+
+    cursor_menu(data) {
+        if (data.open && data.parent) {
+            return data.position;
+        }
     }
 
     replay_menu(data, callback, fast) {
@@ -370,12 +555,18 @@ class Record {
             return;
         }
         if (open && parent) {
-            Recorder.registerClick(data.position, fast);
+            Recorder.registerClick();
             parent.contextMenu().popup(world, data.position);
         } else if (!open && Recorder.openMenu) {
             Recorder.openMenu.destroy();
         }
         setTimeout(callback, 1);
+    }
+
+    cursor_menuItemSelect(data) {
+        if (!data.highlight || !Record.openMenu) return;
+        let item = Recorder.openMenu.children[data.index];
+        if (item) return item.center();
     }
 
     replay_menuItemSelect(data, callback, fast) {
@@ -396,149 +587,242 @@ class Record {
         setTimeout(callback, 1);
     }
 
+    cursor_blockType_newBlock(data) {
+        let button = ide.palette.toolBar.children[1];
+        if (button) return button.center();
+    }
+
     replay_blockType_newBlock(data, callback, fast) {
         ide.currentSprite.makeBlock();
-        let button = ide.palette.toolBar.children[1];
-        if (button) {
-            Recorder.registerClick(button.center(), fast);
-        }
+        Recorder.registerClick();
         setTimeout(callback, 1);
     }
 
-    replay_dialog_setValue(dialog, func, data, callback, fast, shower) {
+    replay_dialog_setValue(dialog, func, data, callback) {
         if (dialog) {
             dialog[func](data.value);
-            if (shower) {
-                let widget = shower(dialog);
-                if (widget) {
-                    Recorder.registerClick(widget.center(), fast);
-                }
-            }
+            Recorder.registerClick();
         }
         setTimeout(callback, 1);
     }
 
-    replay_blockType_setValue(func, data, callback, fast, shower) {
+    replay_blockType_setValue(func, data, callback) {
         let dialog = Recorder.getBlockDialog();
-        this.replay_dialog_setValue(dialog, func, data, callback, fast, shower);
+        this.replay_dialog_setValue(dialog, func, data, callback);
+    }
+
+    cursor_blockType(childName) {
+        let dialog = Recorder.getBlockDialog();
+        if (!dialog || !dialog[childName]) return null;
+        let child = dialog[childName].children.filter(child => child.query())[0];
+        if (!child) return null;
+        return child.center();
+    }
+
+    cursor_blockType_changeCategory(data) {
+        return this.cursor_blockType('categories');
     }
 
     replay_blockType_changeCategory(data, callback, fast) {
-        this.replay_blockType_setValue('changeCategory', data, callback, fast,
-        dialog => {
-            return dialog.categories.children.filter(child => child.query())[0];
-        });
+        this.replay_blockType_setValue('changeCategory', data, callback);
+    }
+
+    cursor_blockType_setScope(data) {
+        return this.cursor_blockType('scopes');
     }
 
     replay_blockType_setScope(data, callback, fast) {
-        this.replay_blockType_setValue('setScope', data, callback, fast,
-        dialog => {
-            return dialog.scopes.children.filter(scope => scope.query())[0];
-        });
+        this.replay_blockType_setValue('setScope', data, callback);
+    }
+
+    cursor_blockType_setType(data) {
+        return this.cursor_blockType('types');
     }
 
     replay_blockType_setType(data, callback, fast) {
-        this.replay_blockType_setValue('setType', data, callback, fast,
-        dialog => {
-            return dialog.types.children.filter(type => type.query())[0];
-        });
+        this.replay_blockType_setValue('setType', data, callback);
+    }
+
+    cursor_blockType_ok(data) {
+        let dialog = Recorder.getBlockDialog();
+        if (dialog) return dialog.buttons.children[0].center();
     }
 
     replay_blockType_ok(data, callback, fast) {
         let dialog = Recorder.getBlockDialog();
         if (dialog) {
-            Recorder.registerClick(dialog.buttons.children[0].center());
+            Recorder.registerClick();
             dialog.ok();
         }
         setTimeout(callback, 1);
     }
 
+    cursor_blockType_cancel(data) {
+        let dialog = Recorder.getBlockDialog();
+        if (dialog) return dialog.buttons.children[1].center();
+    }
+
     replay_blockType_cancel(data, callback, fast) {
         let dialog = Recorder.getBlockDialog();
         if (dialog) {
-            Recorder.registerClick(dialog.buttons.children[1].center());
+            Recorder.registerClick();
             dialog.cancel();
         }
         setTimeout(callback, 1);
     }
 
-    replay_varDialog_prompt(data, callback, fast) {
+    getVarDialogPromptButton() {
         let varBlocks = ide.currentSprite.blocksCache['variables'];
         if (varBlocks) {
             let button = varBlocks[0];
             if (button instanceof PushButtonMorph) {
-                Recorder.registerClick(button.center(), fast);
-                button.action();
+                return button;
             }
+        }
+    }
+
+    cursor_varDialog_prompt(data) {
+        let button = this.getVarDialogPromptButton();
+        if (button) return button.center();
+    }
+
+    replay_varDialog_prompt(data, callback, fast) {
+        let button = this.getVarDialogPromptButton();
+        if (button) {
+            button.action();
+            Recorder.registerClick();
         }
         setTimeout(callback, 1);
     }
 
+    cursor_varDialog_setType(data) {
+        let dialog = Recorder.getNewVarDialog();
+        if (!dialog || !dialog.types) return;
+        let index = data.value == 'local' ? 1 : 0;
+        let child = dialog.types.children[index];
+        if (child) return child.center();
+    }
+
     replay_varDialog_setType(data, callback, fast) {
         this.replay_dialog_setValue(Recorder.getNewVarDialog(), 'setType',
-                data, callback, fast, dialog => {
-            return dialog.types.children.filter(type => type.query())[0];
-        });
+                data, callback);
+    }
+
+    cursor_varDialog_accept(data) {
+        let dialog = Recorder.getNewVarDialog();
+        if (dialog) return dialog.buttons.children[0].center();
     }
 
     replay_varDialog_accept(data, callback, fast) {
         let dialog = Recorder.getNewVarDialog();
         if (dialog) {
-            Recorder.registerClick(dialog.buttons.children[0].center());
+            Recorder.registerClick();
             dialog.accept();
         }
         setTimeout(callback, 1);
     }
 
+    cursor_varDialog_cancel(data) {
+        let dialog = Recorder.getNewVarDialog();
+        if (dialog) return dialog.buttons.children[1].center();
+    }
+
     replay_varDialog_cancel(data, callback, fast) {
         let dialog = Recorder.getNewVarDialog();
         if (dialog) {
-            Recorder.registerClick(dialog.buttons.children[1].center());
+            Recorder.registerClick();
             dialog.cancel();
         }
         setTimeout(callback, 1);
     }
 
-    replay_inputTyped(data, callback, fast) {
-        let dialog = null;
+    getInputDialog(data) {
         if (data.input === BlockDialogMorph.name) {
-            dialog = Recorder.getBlockDialog();
+            return Recorder.getBlockDialog();
         } else if (data.input === VariableDialogMorph.name) {
-            dialog = Recorder.getNewVarDialog();
+            return Recorder.getNewVarDialog();
         } else if (data.input === InputSlotDialogMorph.name) {
-            dialog = Recorder.getDialog('blockInput');
-        } else {
-            console.warn('Unknown input type', data.input);
+            return Recorder.getDialog('blockInput');
         }
+    }
+
+    cursor_inputTyped(data) {
+        let dialog = this.getInputDialog(data);
+        if (!dialog || !dialog.body) return;
+        return dialog.body.center();
+    }
+
+    replay_inputTyped(data, callback, fast) {
+        let dialog = this.getInputDialog(data);
         if (dialog) {
             dialog.body.setContents(data.value);
         }
+        else console.warn('Unknown input type', data.input);
         setTimeout(callback, 1);
+    }
+
+    setBlockDefDims(blockDef) {
+        // TODO: Make the editor big enough for small screens!
+        // Set the size of the editor to large, to make sure we're not
+        try {
+            let mex = window.world.extent();
+            let ph = mex.y * 0.15;
+            let height = mex.y - ph * 2;
+            let pw = ph * 1.5;
+            // let dims = new Rectangle(pw, ph, mex.x - pw, mex.y - ph);
+            let dims = new Rectangle(
+                Math.floor(mex.x * 0.5),
+                Math.floor(mex.y * 0.4),
+                Math.floor(mex.x * 0.9),
+                Math.floor(mex.y * 0.9)
+            );
+            // console.log(mex, ph, pw, dims);
+            blockDef.editorDimensions = dims;
+        } catch {}
     }
 
     replay_blockEditor_start(data, callback, fast) {
         setTimeout(callback, 1);
-        let blockDef = Recorder.getCustomBlock(data);
+        let blockDef = Recorder.getCustomBlock(data.guid);
         if (!blockDef) {
             let editor = BlockEditorMorph.showing
                 .filter(editor => editor.definition.spec === data.spec)[0];
             if (!editor) {
-                console.warn('Missing block editor for spec: ', data.spec);
+                console.warn('Missing block editor for: ', data);
                 return;
             }
-            // If this block was just created, update its guid
+            // If this block was just created, update its guid & size
             editor.definition.guid = data.guid;
+            this.setBlockDefDims(editor.definition);
+            editor.setInitialDimensions()
             return;
         }
 
         // Otherwise just edit the Sprite
-        new BlockEditorMorph(blockDef, window.ide.currentSprite).popUp();
+        this.setBlockDefDims(blockDef);
+        let editor = new BlockEditorMorph(blockDef, window.ide.currentSprite);
+        editor.popUp();
+    }
+
+    cursor_blockEditor_ok(data) {
+        let editor = Recorder.findShowingBlockEditor(data.guid);
+        if (!editor || !editor.children) return;
+        let button = editor.buttons.children[0];
+        if (button) return button.center();
     }
 
     replay_blockEditor_ok(data, callback, fast) {
         setTimeout(callback, 1);
         let editor = Recorder.findShowingBlockEditor(data.guid);
         editor.ok();
+        Recorder.registerClick();
+    }
+
+    cursor_blockEditor_apply(data) {
+        let editor = Recorder.findShowingBlockEditor(data.guid);
+        if (!editor || !editor.children) return;
+        let button = editor.buttons.children[1];
+        if (button) return button.center();
     }
 
     replay_blockEditor_apply(data, callback, fast) {
@@ -547,16 +831,24 @@ class Record {
         // There may not be an editor if they hit ok instead of apply
         if (!editor) return;
         editor.updateDefinition();
+        Recorder.registerClick();
+    }
+
+    cursor_blockEditor_cancel(data) {
+        let editor = Recorder.findShowingBlockEditor(data.guid);
+        if (!editor || !editor.children) return;
+        let button = editor.buttons.children[2];
+        if (button) return button.center();
     }
 
     replay_blockEditor_cancel(data, callback, fast) {
         setTimeout(callback, 1);
         let editor = Recorder.findShowingBlockEditor(data.guid);
         editor.cancel();
+        Recorder.registerClick();
     }
 
-    replay_blockEditor_startUpdateBlockLabel(data, callback, fast) {
-        setTimeout(callback, 1);
+    getBlockEditorUpdateBlockLabelButton(data) {
         const editor = Recorder.findShowingBlockEditor(data.definition.guid);
         const index = data.index;
         if (index < 0) return;
@@ -565,14 +857,31 @@ class Record {
             // likely to work until code changes...
             const cbMorph = editor.body.children[0].children[0].children[0];
             const target = cbMorph.children[index];
-            Recorder.registerClick(target.center(), fast);
-            target.mouseClickLeft();
+            return target;
         } catch (e) {
             console.error('Block editor has no labels: ', editor, index, e);
         }
     }
 
-    replayDialogAction(callback, fast, dialogKey, action, args, buttonFinder) {
+    cursor_blockEditor_startUpdateBlockLabel(data) {
+        var button = this.getBlockEditorUpdateBlockLabelButton(data);
+        if (button) return button.center();
+    }
+
+    replay_blockEditor_startUpdateBlockLabel(data, callback, fast) {
+        setTimeout(callback, 1);
+        var button = this.getBlockEditorUpdateBlockLabelButton(data);
+        if (button) return button.mouseClickLeft();
+    }
+
+    cursorDialogAction(dialogKey, buttonFinder) {
+        const dialog = Recorder.getDialog(dialogKey);
+        if (!dialog) return null;
+        const button = buttonFinder(dialog)
+        if (button) return button.center();
+    }
+
+    replayDialogAction(callback, dialogKey, action, args) {
         setTimeout(callback, 1);
         const dialog = Recorder.getDialog(dialogKey);
         if (!dialog) {
@@ -580,54 +889,66 @@ class Record {
             return;
         }
         dialog[action](...args);
-        if (buttonFinder) {
-            const button = buttonFinder(dialog);
-            if (button) {
-                Recorder.registerClick(button.center(), fast);
-            }
-        }
+        Recorder.registerClick();
+    }
+
+    cursor_blockInput_setType(data) {
+        return this.cursorDialogAction('blockInput',
+            dialog => dialog.types[data.value ? 1 : 0]);
     }
 
     replay_blockInput_setType(data, callback, fast) {
         this.replayDialogAction(
-            callback, fast, 'blockInput', 'setType', [data.value], dialog => {
-                return dialog.types[data.value ? 1 : 0];
-            }
-        );
+            callback, 'blockInput', 'setType', [data.value]);
+    }
+
+    cursor_blockInput_accept(data) {
+        return this.cursorDialogAction('blockInput',
+            dialog => dialog.buttons.children[0]);
     }
 
     replay_blockInput_accept(data, callback, fast) {
         this.replayDialogAction(
-            callback, fast, 'blockInput', 'accept', [], dialog => {
-                return dialog.buttons.children[0];
-            }
-        );
+            callback, 'blockInput', 'accept', []);
     }
 
-    replay_blockInput_cancel(data, callback, fast) {
-        this.replayDialogAction(
-            callback, fast, 'blockInput', 'cancel', [], dialog => {
+    cursor_blockInput_cancel(data) {
+        return cursorDialogAction('blockInput', dialog => {
                 const children = dialog.buttons.children;
                 return children[children.length - 1];
             }
         );
     }
 
+    replay_blockInput_cancel(data, callback, fast) {
+        this.replayDialogAction(
+            callback, 'blockInput', 'cancel', []);
+    }
+
+    cursor_blockInput_deleteFragment(data) {
+        return cursorDialogAction('blockInput',
+            dialog => dialog.buttons.children[1]);
+    }
+
     replay_blockInput_deleteFragment(data, callback, fast) {
         this.replayDialogAction(
-            callback, fast, 'blockInput', 'deleteFragment', [], dialog => {
-                return dialog.buttons.children[1];
-            }
-        );
+            callback, 'blockInput', 'deleteFragment', []);
+    }
+
+    cursor_IDE_toggleSingleStepping(data) {
+        return window.ide.controlBar.steppingButton.center();
     }
 
     replay_IDE_toggleSingleStepping(data, callback, fast) {
         setTimeout(callback, 1);
         // Ignore this if the value is already correct
         if (data.value == Process.prototype.enableSingleStepping) return;
-        Recorder.registerClick(
-            window.ide.controlBar.steppingButton.center(), fast);
+        Recorder.registerClick();
         window.ide.toggleSingleStepping();
+    }
+
+    cursor_IDE_updateSteppingSlider(data) {
+        return window.ide.controlBar.steppingSlider.button.center();
     }
 
     replay_IDE_updateSteppingSlider(data, callback, fast) {
@@ -636,29 +957,38 @@ class Record {
         window.ide.controlBar.steppingSlider.value =
             Process.prototype.flashTime * 100 + 1
         window.ide.controlBar.steppingSlider.fixLayout();
-        Recorder.registerClick(
-            window.ide.controlBar.steppingSlider.button.center(), fast);
+        Recorder.registerClick();
+    }
+
+    cursor_IDE_pause(data) {
+        return window.ide.controlBar.pauseButton.center();
     }
 
     replay_IDE_pause(data, callback, fast) {
         setTimeout(callback, 1);
         if (window.ide.stage.threads.isPaused()) return;
-        Recorder.registerClick(
-            window.ide.controlBar.pauseButton.center(), fast);
+        Recorder.registerClick();
         window.ide.togglePauseResume();
+    }
+
+    cursor_IDE_unpause(data) {
+        return window.ide.controlBar.pauseButton.center();
     }
 
     replay_IDE_unpause(data, callback, fast) {
         setTimeout(callback, 1);
         if (!window.ide.stage.threads.isPaused()) return;
-        Recorder.registerClick(
-            window.ide.controlBar.pauseButton.center(), fast);
+        Recorder.registerClick();
         window.ide.togglePauseResume();
+    }
+
+    cursor_IDE_addSprite(data) {
+        return window.ide.corralBar.children[0].center();
     }
 
     replay_IDE_addSprite(data, callback, fast) {
         setTimeout(callback, 1);
-        Recorder.registerClick(window.ide.corralBar.children[0].center(), fast);
+        Recorder.registerClick();
         window.ide.addNewSprite();
         let sprite = window.ide.currentSprite;
         sprite.silentGotoXY(data.x, data.y);
@@ -667,14 +997,32 @@ class Record {
         sprite.setColorComponentHSVA(2, data.lightness);
     }
 
+    getSpriteIcon(data) {
+        let icons = window.ide.corral.allChildren()
+        .filter(c => c instanceof SpriteIconMorph);
+        return icons.filter(c => c.labelString === data.value)[0];
+    }
+
+    cursor_IDE_selectSprite(data) {
+        let icon = this.getSpriteIcon(data);
+        if (icon) return icon.center();
+    }
+
     replay_IDE_selectSprite(data, callback, fast) {
         setTimeout(callback, 1);
-        let icons = window.ide.corral.allChildren()
-            .filter(c => c instanceof SpriteIconMorph);
-        let icon = icons.filter(c => c.labelString === data.value)[0];
+        let icon = this.getSpriteIcon(data);
         if (!icon) return;
-        Recorder.registerClick(icon.center(), fast);
+        Recorder.registerClick();
         icon.action();
+    }
+
+    // TOOD: Needs a pre-cursor as well
+    cursor_spriteDropped(data){
+        const stage = ide.stage;
+        if (!stage) return;
+        let x = stage.center().x + data.x * stage.scale
+        let y = stage.center().y - data.y * stage.scale
+        return new Point(x, y);
     }
 
     replay_spriteDropped(data, callback, fast) {
@@ -691,10 +1039,23 @@ class Record {
         );
     }
 
-    replay_inputPromptEdited(data, callback, fast) {
-        setTimeout(callback, 1);
+    replay_inputPromptEdited(data, callback, fast, attempts) {
         let prompter = this.getActivePrompter();
-        if (!prompter) return;
+        attempts = attempts || 0;
+        if (!prompter) {
+            // Try a few times to get the prompter before giving up
+            if (attempts < 3) {
+                setTimeout(() => {
+                    this.replay_inputPromptEdited(
+                        data, callback, fast, attempts + 1);
+                }, 30);
+                return;
+            }
+            console.warn('Missing prompter!');
+            setTimeout(callback, 1);
+            return;
+        }
+        setTimeout(callback, 1);
         let stringMorph = prompter.inputField.contents().text;
         stringMorph.text = data.value;
         stringMorph.changed();
@@ -702,12 +1063,32 @@ class Record {
         stringMorph.rerender();
     }
 
-    replay_inputPromptAccept(data, callback, fast) {
-        setTimeout(callback, 1);
+    cursor_inputPromptAccept(data) {
         let prompter = this.getActivePrompter();
-        if (!prompter) return;
-        Recorder.registerClick(prompter.button.center(), fast);
+        if (prompter) return prompter.button.center();
+    }
+
+    replay_inputPromptAccept(data, callback, fast, attempts) {
+        let prompter = this.getActivePrompter();
+        attempts = attempts || 0;
+        if (!prompter) {
+            // Try a few times to get the prompter before giving up
+            // Note this may not be necessary anymore, but in case code does
+            // take extra time to run in fast tracking, could be helpful.
+            if (attempts < 3) {
+                setTimeout(() => {
+                    this.replay_inputPromptAccept(
+                        data, callback, fast, attempts + 1);
+                }, 30);
+                return;
+            }
+            console.warn('Missing prompter!');
+            setTimeout(callback, 1);
+            return;
+        }
+        setTimeout(callback, 1);
         prompter.accept();
+        Recorder.registerClick();
     }
 
     findWatcherToggle(selectorOrSpec, isVar) {
@@ -726,6 +1107,11 @@ class Record {
         return null;
     }
 
+    cursor_sprite_toggleWatcher(data) {
+        let toggle = this.findWatcherToggle(data.selector, false);
+        if (toggle) return toggle.center();
+    }
+
     replay_sprite_toggleWatcher(data, callback, fast) {
         setTimeout(callback, 1);
         const sprite = ide.currentSprite, stage = ide.stage;
@@ -737,13 +1123,18 @@ class Record {
         const toggle = this.findWatcherToggle(selector, false);
         if (toggle == null) return;
         toggle.trigger();
-        Recorder.registerClick(toggle.center(), fast);
+        Recorder.registerClick();
         // sprite.toggleWatcher(
         //     selector, localize(info.spec), sprite.blockColor[info.category]);
         // const watcher = sprite.watcherFor(stage, selector);
         // if (watcher) {
         //     Recorder.registerClick(watcher.center(), fast);
         // }
+    }
+
+    cursor_sprite_toggleVariableWatcher(data) {
+        let toggle = this.findWatcherToggle(data.varName, true);
+        if (toggle) return toggle.center();
     }
 
     replay_sprite_toggleVariableWatcher(data, callback, fast) {
@@ -774,6 +1165,9 @@ class Recorder {
     static ID_OFFSET = 10000;
     static onClickCallback = null;
     static openMenu = null;
+    static clickRegistered = false;
+
+    static BLOCK_DRAG_DURATION_MS = 250;
 
     static resetSnap(startXML) {
         if (!window.world) return;
@@ -788,23 +1182,71 @@ class Recorder {
             window.ide.newProject();
             window.ide.changeCategory('motion');
         } else {
-            // Queue project opening to avoid sync issues
-            window.ide.openProjectString(startXML);
+            // Note: raw open is synchronous
+            window.ide.rawOpenProjectString(startXML);
         }
     }
 
     static registerBlock(block) {
         this.blockMap.set(block.id, block);
+        // if (block.id % 10 === 0) console.trace();
     }
 
-    static getBlock(id, isTemplate) {
-        let block = this.blockMap.get(id);
-        return block;
+    static getTemplateBlock(selector) {
+        let matching = [...this.blockMap.values()].filter(
+            block => block.isTemplate && block.selector === selector
+        );
+        // TODO: This is a hack b/c we get multiple template blocks registered
+        // and the most recent is (probably?) the correct one. We really
+        // want a separate system for template blocks, but it's non-trivial
+        // because at registration time blocks don't have any info
+        // (e.g. isTemplate).
+        return matching[matching.length - 1];
+    }
+
+    static getBlock(blockDef) {
+        if (blockDef.template) {
+            let block = this.getTemplateBlock(blockDef.selector);
+            if (block) return block;
+        } else if (blockDef.isPrototype) {
+            // Get the prototype from the relevant PHBM
+            let phbm = Recorder.getPHBM(blockDef.definitionGUID);
+            if (!phbm) return;
+            return phbm.parts()[0];
+        }
+        return this.blockMap.get(blockDef.id);
+    }
+
+    static updateBlockInBlockEditor(block) {
+        // Check to see if this is nested under a PHBM (i.e. a block definition)
+        let phbm = block.parentThatIsA(PrototypeHatBlockMorph);
+        // If not, it's not in an editor
+        if (!phbm) return block;
+        if (!phbm.definition) {
+            console.warn('PBHM without definition', phbm);
+            return block;
+        }
+        let guid = phbm.definition.guid;
+        // Find the relevant showing block editor
+        let editor = this.findShowingBlockEditor(guid);
+        if (!editor) return block;
+        // If this block is already in that editor, it's up-to-date
+        if (block.parentThatIsA(BlockEditorMorph) == editor) return block;
+        // Otherwise, find the block in that editor that's got the same ID
+        let newBlock = editor.allChildren()
+            .filter(c => c instanceof BlockMorph && c.id === block.id)[0];
+        if (!newBlock) return block;
+        // Update the blockMap
+        this.registerBlock(newBlock);
+        return newBlock;
     }
 
     static getOrCreateBlock(blockDef) {
-        let block = Recorder.getBlock(blockDef.id, blockDef.template);
-        if (block) return block;
+        let block = Recorder.getBlock(blockDef);
+        if (block) {
+            // If this is in a custom block definition it may be outdated
+            return Recorder.updateBlockInBlockEditor(block);
+        }
         let id = blockDef.id;
         let sprite = window.ide.currentSprite;
         if (blockDef.selector === 'reportGetVar') {
@@ -812,27 +1254,29 @@ class Recorder {
             // but should work
             let isLocal = !!sprite.variables.vars[blockDef.spec];
             block = sprite.variableBlock(blockDef.spec, isLocal);
-        } else if (
-            blockDef.selector === 'evaluateCustomBlock' && blockDef.guid
-        ) {
-            let customBlock = Recorder.getCustomBlock(blockDef.guid);
+        } else if (blockDef.definitionGUID) {
+            let customBlock = Recorder.getCustomBlock(blockDef.definitionGUID);
             if (!customBlock) {
-                console.error('No custom block def for ', blockDef.guid);
+                console.error('No custom block def for', blockDef);
                 return null;
             }
             block = customBlock.blockInstance();
+        } else if (blockDef.selector === 'evaluateCustomBlock') {
+            console.error('Custom block without definition GUID! ' +
+                'Is this a legacy recording?');
         } else {
             block = sprite.blockForSelector(
                 blockDef.selector, true);
+            if (!block) {
+                console.error('No block selector to create for def', blockDef);
+            }
         }
         if (!block) return undefined;
         // console.log('Creating', blockDef, block);
         block.id = id;
         block.parent = this.getFrameMorph();
         block.isDraggable = true;
-        // We actually shouldn't update this, so the offset continues to work
-        // BlockMorph.nextId = Math.max(BlockMorph.nextId, blockDef.id + 1);
-        this.blockMap.set(id, block);
+        this.registerBlock(block);
         return block;
     }
 
@@ -859,11 +1303,15 @@ class Recorder {
         this.onClickCallback = callback;
     }
 
-    static registerClick(point, fast) {
-        if (fast) return;
-        if (this.onClickCallback) {
+    static registerClick() {
+        Recorder.clickRegistered = true;
+    }
+
+    static clickIfRegistered(point) {
+        if (Recorder.clickRegistered && this.onClickCallback) {
             this.onClickCallback(point.x, point.y);
         }
+        Recorder.clickRegistered = false;
     }
 
     static resetBlockMap() {
@@ -875,7 +1323,9 @@ class Recorder {
     }
 
     static setRecordScale(scale) {
-        ide.setBlocksScale(scale);
+        if (SyntaxElementMorph.prototype.scale != scale) {
+            ide.setBlocksScale(scale);
+        }
         Recorder.recordScale = scale;
     }
 
@@ -898,6 +1348,10 @@ class Recorder {
         this.index = 0;
         this.lastTime = new Date().getTime();
         this.isRecording = false;
+
+        Trace.addLoggingHandler(
+            'Block.grabbed',
+            this.defaultHandler('block_grabbed'));
 
         let blockChangedHandler = (m, data) => {
             data = Object.assign({}, data);
@@ -1096,7 +1550,79 @@ class Recorder {
         return ide.sprites.contents.filter(s => s.name === name)[0];
     }
 
-    static deserialize(original) {
+
+    static getPHBM(guid) {
+        if (!guid) {
+            console.error("Deserializing PHBM without guid", guid);
+            return null;
+        }
+        let editor = Recorder.findShowingBlockEditor(guid);
+        if (!editor) return null;
+
+        // console.log('Editor');
+        let blocks = editor.body.children[0].children;
+        blocks = blocks.filter(b =>
+            b instanceof PrototypeHatBlockMorph);
+        return blocks[0];
+    }
+
+    static deserializeArgId(value, createBlocks) {
+        let block;
+        if (value.parentBlock) {
+            // Need to wrap in an object to deserialize
+            block = Recorder.deserialize({
+                block: value.parentBlock
+            }, createBlocks).block;
+        } else {
+            // Legacy deserialization
+            if (createBlocks) {
+                block = Recorder.getOrCreateBlock(value);
+            } else {
+                block = Recorder.getBlock(value);
+            }
+        }
+
+        // If we couldn't find the (existing) block and we can't create it
+        // then return the data object
+        if (!block && !createBlocks) {
+            return this.deserialize(value, createBlocks);
+        }
+
+        // Otherwise, if we could create it but failed to, log the error
+        if (!block) {
+            console.error('Could not find/create parent block for arg', value);
+            return null;
+        }
+
+        let parentInputs = block.inputs();
+        if (value.multiArgIndex != null && value.multiArgIndex >= 0) {
+            let multiArg = parentInputs[value.multiArgIndex];
+            if (multiArg && multiArg instanceof MultiArgMorph) {
+                parentInputs = multiArg.inputs();
+            } else {
+                console.error('Missing MultiArgMorph', value, block);
+            }
+        } else if (
+            parentInputs.length == 1 &&
+            parentInputs[0] instanceof MultiArgMorph
+        ) {
+            // If the block has a single MultiArgMorph, use its inputs
+            // instead of the block's
+            parentInputs = parentInputs[0].inputs();
+        }
+
+        let input = parentInputs[value.argIndex];
+        if (!input) {
+            console.error('Block missing input:', block, value);
+            return null;
+        }
+
+        // Add index for new redo system
+        input.indexInParent = input.parent.children.indexOf(input);
+        return input;
+    }
+
+    static deserialize(original, createBlocks) {
 
         let record = Object.assign({}, original);
 
@@ -1112,13 +1638,23 @@ class Recorder {
 
             let type = value.objType;
             // console.log(prop, value);
-            if (type === BlockMorph.name) {
-                record[prop] = Recorder.getOrCreateBlock(value);
+            if (type === PrototypeHatBlockMorph.name) {
+                // PHBMs are handled separately, since they don't have IDs
+                record[prop] = Recorder.getPHBM(value.guid);
+                // console.log('deserialized PHBM', record[prop]);
+            } else if (type === BlockMorph.name) {
+                record[prop] = Recorder.getBlock(value);
+                if (!record[prop]) {
+                    // Only create blocks if this is for an actual replay
+                    // Otherwise, just return the ID object
+                    if (createBlocks) {
+                        record[prop] = Recorder.getOrCreateBlock(value);
+                    } else {
+                        record[prop] = this.deserialize(value, createBlocks);
+                    }
+                }
             } else if (type === ArgMorph.name) {
-                let block = Recorder.getOrCreateBlock(value);
-                record[prop] = block.inputs()[value.argIndex];
-                // Add index for new redo system
-                record[prop].indexInParent = value.argIndex;
+                record[prop] = this.deserializeArgId(value, createBlocks);
             } else if (type === ScriptsMorph.name) {
                 record[prop] = null;
                 if (value.source === 'Sprite') {
@@ -1155,7 +1691,7 @@ class Recorder {
                     console.warn('Could not find sprite:', value.name);
                 }
             } else if (type === 'Object') {
-                record[prop] = this.deserialize(value);
+                record[prop] = this.deserialize(value, createBlocks);
             } else if (Array.isArray(value)) {
                 record[prop] = value.slice();
             } else {
@@ -1171,6 +1707,11 @@ class Recorder {
     }
 
     static serialize(dropRecord) {
+        // TODO: Refactor this and deserialize to allow serializing non-objects
+        if (dropRecord && dropRecord.constructor.name !== 'Object') {
+            console.warn('Attempting to serialize non-map', dropRecord);
+        }
+
         let record = Object.assign({}, dropRecord);
         Object.keys(record).forEach(prop => {
             if (!record.hasOwnProperty(prop)) return;
@@ -1191,13 +1732,33 @@ class Recorder {
             let type = typeof(value);
             if (type === 'object') type = Recorder.debugType(value);
             // console.log(prop, value);
-            if (value instanceof BlockMorph) {
-                record[prop] = value.blockId();
+            if (value instanceof PrototypeHatBlockMorph) {
                 const def = value.definition;
+                record[prop] = { guid: null };
                 if (def && def.guid) record[prop].guid = def.guid;
+                else console.warn('PHBM without guid!', value);
+                record[prop].objType = PrototypeHatBlockMorph.name;
+                // console.log('PHBM!!!!', record[prop]);
+            } else if (value instanceof BlockMorph) {
+                record[prop] = value.blockId();
                 record[prop].objType = BlockMorph.name;
             } else if (value instanceof ArgMorph) {
                 record[prop] = value.argId();
+                if (!record[prop]) {
+                    console.warn("Unable to find arg", value);
+                    return;
+                }
+                let block = value.parentThatIsA(BlockMorph);
+                // console.log('Arg parent block!!', block);
+                // Directly serialize the parent. For backwards compatibility
+                // we also save the full argId, which duplicates most of this
+                // informaiton.
+                // Need to wrap it in an object b/c of the weird way serialize
+                // expects only maps
+                record[prop].parentBlock = Recorder.serialize({
+                    block: block
+                }).block;
+
                 if (record[prop].argIndex === -1 &&
                         prop === 'lastReplacedInput') {
                     // Since the arg has been replaced, we actually want the
