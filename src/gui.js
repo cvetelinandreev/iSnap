@@ -2839,6 +2839,10 @@ IDE_Morph.prototype.newCamSprite = function () {
     camDialog.popUp(this.world());
 };
 
+IDE_Morph.prototype.spriteBarTabTo = function (tab) {
+    this.spriteBar.tabBar.tabTo(tab);
+};
+
 IDE_Morph.prototype.recordNewSound = function () {
     var soundRecorder;
 
