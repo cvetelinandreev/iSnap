@@ -1161,6 +1161,12 @@ class Record {
         //     Recorder.registerClick(watcher.center(), fast);
         // }
     }
+
+    replay_changeSpriteTab(data, callback) {
+        Recorder.registerClick();
+        window.ide.spriteBarTabTo(data.value);
+        setTimeout(callback, 1);
+    }
 }
 
 class Recorder {
