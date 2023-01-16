@@ -963,8 +963,8 @@ CustomCommandBlockMorph.prototype.edit = function () {
             (definition) => {
                 if (definition) { // temporarily update everything
                     console.log(definition);
-                    Trace.log('BlockEditor.changeType',
-                        this.getDefinitionJSON(definition));
+                    // Trace.log('BlockEditor.changeType',
+                    //     this.getDefinitionJSON(definition));
                     hat.blockCategory = definition.category;
                     hat.type = definition.type;
                     this.refreshPrototype();
