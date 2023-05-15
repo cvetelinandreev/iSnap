@@ -5974,7 +5974,7 @@ SpriteMorph.prototype.receiveUserInteraction = function (
 
 SpriteMorph.prototype.mouseDoubleClick = function () {
     if (this.isTemporary) {return; }
-    this.edit();
+    //this.edit();
 };
 
 // SpriteMorph timer
