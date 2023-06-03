@@ -6,7 +6,7 @@ extend(ScriptsMorph, 'recordDrop', function(base, lastGrabOrigin) {
     // Record the situation now instead of waiting to undo
     if (this.dropRecord.lastDroppedBlock) {
         this.dropRecord.situation =
-                this.dropRecord.lastDroppedBlock.situation();
+                this.raw.lastDroppedBlock.situation();
     }
     window.recorder.addDropRecord(this.dropRecord);
 });
@@ -1190,6 +1190,7 @@ class Recorder {
         } else {
             // Note: raw open is synchronous
             window.ide.rawOpenProjectString(startXML);
+            setTimeout(() => window.ide.runScripts(), 1);            
         }
     }
 
