@@ -2899,7 +2899,7 @@ IDE_Morph.prototype.removeSprite = function (sprite) {
     this.fixLayout();
     this.currentSprite = detect(
         this.stage.children,
-        morph => morph instanceof SpriteMorph && !morph.isTemporary
+        morph => morph instanceof SpriteMorph && !morph.isTemporary && morph.idx === 1
     ) || this.stage;
 
     this.selectSprite(this.currentSprite);
