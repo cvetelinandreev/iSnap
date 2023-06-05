@@ -6,7 +6,7 @@ extend(ScriptsMorph, 'recordDrop', function(base, lastGrabOrigin) {
     // Record the situation now instead of waiting to undo
     if (this.dropRecord.lastDroppedBlock) {
         this.dropRecord.situation =
-                this.raw.lastDroppedBlock.situation();
+                this.dropRecord.lastDroppedBlock.situation();
     }
     window.recorder.addDropRecord(this.dropRecord);
 });
